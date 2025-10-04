@@ -111,7 +111,7 @@ class ReplicaExporter:
         return resized if len(tensor.shape) > 2 else resized.squeeze(0)
           
     def _save_processed_frames(self, frames):
-        _frames = frames.squeeze()
+        _frames = frames.squeeze().clone()
         _frames *= 255
         _frames = _frames.clamp(0.0, 255)
         
@@ -124,7 +124,7 @@ class ReplicaExporter:
             cv.imwrite(self._make_frame_path(i), img_cv)
             
     def _save_depth_maps(self, depth_maps: torch.Tensor):
-        _depth_maps = depth_maps.squeeze()
+        _depth_maps = depth_maps.squeeze().clone()
         _depth_maps *= self.depth_scale 
         _depth_maps = _depth_maps.clamp(0.0, 65535) # 16-bit png max value: 2**16 - 1
         
