@@ -39,30 +39,34 @@ def make_str_num(num, digits=4):
 
 class ReplicaExporter:
     def __init__(self, 
-        export_dir: str
+        dataset_root_dir: str
     ):
-        self._init_paths(export_dir)
+        self.root_dir = Path(dataset_root_dir)
         
     def export(self,
         orig_coords: torch.Tensor,
         frames: torch.Tensor,
         depth_maps: torch.Tensor,
         reconstruction:  pycolmap.Reconstruction,
-        export_dir:str=None
+        scene_name:str=None
     ):
         assert len(orig_coords) == len(frames) == len(depth_maps)
-        if export_dir:
-            self._init_paths(export_dir)
+        
+        if not scene_name:
+            scene_name = f'scene_{make_str_num(len(os.listdir(self.root_dir)), 2)}'
+            
+        self._init_paths(scene_name)
         self.orig_coords = orig_coords.to(torch.int32)
         
         self._save_processed_frames(frames)
         self._save_depth_maps(depth_maps)
         self._save_colmap_as_kitti_traj(reconstruction)
+        
 
-    def _init_paths(self, export_dir: str):
-        self.dir = Path(export_dir)
-        self.results_dir = self.dir / 'results'
-        self.traj_path = self.dir / 'traj.txt'
+    def _init_paths(self, scene_name: str):
+        self.scene_dir = self.root_dir / scene_name
+        self.results_dir = self.scene_dir / 'results'
+        self.traj_path = self.scene_dir / 'traj.txt'
         
         self.frame_stem = 'frame'
         self.frame_suffix_wo_dot = 'jpg'
@@ -70,7 +74,7 @@ class ReplicaExporter:
         self.depth_stem = 'depth'
         self.depth_suffix_wo_dot = 'png'
         
-        for dir in [self.dir, self.results_dir]:
+        for dir in [self.scene_dir, self.results_dir]:
             os.makedirs(dir, exist_ok=True)
         
     def _make_result_path(self, stem: str, frame_num: int, suffix_without_dot: str):
