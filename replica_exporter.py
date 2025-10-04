@@ -7,6 +7,30 @@ import torch
 import torchvision.transforms.v2 as transforms
 import cv2 as cv
 
+import pycolmap
+
+def tum_to_kitti(tx, ty, tz, qw, qx, qy, qz):
+    # https://automaticaddison.com/how-to-convert-a-quaternion-to-a-rotation-matrix/
+    
+    r00 = 2*(qw**2 + qx**2) - 1
+    r01 = 2*(qx * qy - qw * qz)
+    r02 = 2*(qx * qz + qw * qy)
+    r10 = 2*(qx * qy + qw * qz)
+    r11 = 2*(qw**2 + qy**2) - 1
+    r12 = 2*(qy * qz - qw * qx)
+    r20 = 2*(qx * qz - qw * qy)
+    r21 = 2*(qy * qz + qw * qx)
+    r22 = 2*(qw**2 + qz**2) - 1
+    R = np.array([[r00, r01, r02], [r10, r11, r12], [r20, r21, r22]])
+    
+    # add position shift
+    t = np.array([[tx], [ty], [tz]])
+    H = np.hstack((R, t))
+    H = np.vstack((H, [0, 0, 0, 1]))
+    
+    # get all 16 values including last row 0 0 0 1
+    return H.flatten()
+
 def make_str_num(num, digits=4):
     str_num = str(num)
     zeros_num = digits-len(str_num)
@@ -23,6 +47,7 @@ class ReplicaExporter:
         orig_coords: torch.Tensor,
         frames: torch.Tensor,
         depth_maps: torch.Tensor,
+        reconstruction:  pycolmap.Reconstruction,
         export_dir:str=None
     ):
         assert len(orig_coords) == len(frames) == len(depth_maps)
@@ -32,6 +57,7 @@ class ReplicaExporter:
         
         self._save_processed_frames(frames)
         self._save_depth_maps(depth_maps)
+        self._save_colmap_as_kitti_traj(reconstruction)
 
     def _init_paths(self, export_dir: str):
         self.dir = Path(export_dir)
@@ -101,3 +127,22 @@ class ReplicaExporter:
             restored = self._restore_tensor_with_coords(depth_map, coords)
             img_cv = restored.cpu().detach().numpy().astype(np.uint8)
             cv.imwrite(self._make_depth_path(i), img_cv)
+            
+    def _save_colmap_as_kitti_traj(self, reconstruction: pycolmap.Reconstruction):
+        images = list(reconstruction.images.values())
+        images.sort(key=lambda x: x.name)
+        
+        with open(self.traj_path, 'w') as f:
+            with open(self.traj_path.with_stem('traj_cam_from_world'), 'w') as f_cfw:
+                for image in images:
+                    # camera-from-world
+                    homogen_mat_12 = image.cam_from_world.matrix()
+                    homogen_mat_16_cfw = np.vstack([homogen_mat_12, [0, 0, 0, 1]])
+                    # world-from-camera
+                    homogen_mat_16_wfc = np.linalg.inv(homogen_mat_16_cfw)
+                    
+                    kitti_str = ' '.join(map(str, homogen_mat_16_wfc.flatten()))
+                    f.write(kitti_str + '\n')
+                    
+                    kitti_str = ' '.join(map(str, homogen_mat_16_cfw.flatten()))
+                    f_cfw.write(kitti_str + '\n')
