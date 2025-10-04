@@ -43,6 +43,7 @@ class ReplicaExporter:
         dataset_root_dir: str
     ):
         self.root_dir = Path(dataset_root_dir)
+        self.depth_scale = 6553.5
         
     def export(self,
         orig_coords: torch.Tensor,
@@ -124,16 +125,12 @@ class ReplicaExporter:
             
     def _save_depth_maps(self, depth_maps: torch.Tensor):
         _depth_maps = depth_maps.squeeze()
-        self.depth_scale = _depth_maps.max()
-        _depth_maps /= self.depth_scale
-        _depth_maps *= 255
-        _depth_maps = _depth_maps.clamp(0.0, 255)
-        
-        print(f'Scale is {self.depth_scale}')
+        _depth_maps *= self.depth_scale 
+        _depth_maps = _depth_maps.clamp(0.0, 65535) # 16-bit png max value: 2**16 - 1
         
         for i, (depth_map, coords) in enumerate(zip(_depth_maps, self.orig_coords)):
             restored = self._restore_tensor_with_coords(depth_map, coords)
-            img_cv = restored.cpu().detach().numpy().astype(np.uint8)
+            img_cv = restored.cpu().detach().numpy().astype(np.uint16)
             cv.imwrite(self._make_depth_path(i), img_cv)
             
     def _save_colmap_as_kitti_traj(self, reconstruction: pycolmap.Reconstruction):
