@@ -22,6 +22,8 @@ from pathlib import Path
 import trimesh
 import pycolmap
 
+from replica_exporter import ReplicaExporter
+
 
 from vggt.models.vggt import VGGT
 from vggt.utils.load_fn import load_and_preprocess_images_square
@@ -134,6 +136,8 @@ def demo_fn(args):
     images = images.to(device)
     original_coords = original_coords.to(device)
     print(f"Loaded {len(images)} images from {image_dir}")
+    
+    exporter = ReplicaExporter(Path('datasets/custom'))
 
     # Run VGGT to estimate camera and depth
     # Run with 518x518 images
@@ -239,6 +243,14 @@ def demo_fn(args):
         img_size=reconstruction_resolution,
         shift_point2d_to_original_res=True,
         shared_camera=shared_camera,
+    )
+    
+    exporter.export(
+        original_coords.to(device),
+        images.to(device),
+        torch.tensor(depth_map).to(device),
+        reconstruction,
+        Path(args.scene_dir).name
     )
 
     print(f"Saving reconstruction to {args.scene_dir}/sparse")
