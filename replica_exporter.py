@@ -8,6 +8,7 @@ import torchvision.transforms.v2 as transforms
 import cv2 as cv
 
 import pycolmap
+import yaml
 
 def tum_to_kitti(tx, ty, tz, qw, qx, qy, qz):
     # https://automaticaddison.com/how-to-convert-a-quaternion-to-a-rotation-matrix/
@@ -61,12 +62,15 @@ class ReplicaExporter:
         self._save_processed_frames(frames)
         self._save_depth_maps(depth_maps)
         self._save_colmap_as_kitti_traj(reconstruction)
+        self._save_colmap_as_camera_yaml(reconstruction)
         
 
     def _init_paths(self, scene_name: str):
         self.scene_dir = self.root_dir / scene_name
         self.results_dir = self.scene_dir / 'results'
         self.traj_path = self.scene_dir / 'traj.txt'
+        self.camera_path = self.scene_dir / 'camera.yaml'
+        self.last_camera_path = self.root_dir / 'camera.yaml'
         
         self.frame_stem = 'frame'
         self.frame_suffix_wo_dot = 'jpg'
@@ -150,3 +154,40 @@ class ReplicaExporter:
                     
                     kitti_str = ' '.join(map(str, homogen_mat_16_cfw.flatten()))
                     f_cfw.write(kitti_str + '\n')
+    
+                        
+    def _save_colmap_as_camera_yaml(self, reconstruction: pycolmap.Reconstruction):
+        cameras = list(reconstruction.cameras.values())
+        assert len(cameras) > 0
+        base_cam = cameras[0]
+        
+        image_heights = np.array([camera.width for camera in cameras])
+        image_widths = np.array([camera.height for camera in cameras])
+        fxs = np.array([camera.focal_length_x for camera in cameras])
+        fys = np.array([camera.focal_length_y for camera in cameras])
+        cxs = np.array([camera.principal_point_x for camera in cameras])
+        cys = np.array([camera.principal_point_y for camera in cameras])
+        
+        assert all(image_heights == image_heights[0])
+        assert all(image_widths == image_widths[0])
+        
+        camera_dict = {
+            'dataset_name': 'replica',
+            'camera_params': {
+                'image_height': int(image_heights[0]),
+                'image_width': int(image_widths[0]),
+                'fx': float(fxs.mean()),
+                'fy': float(fys.mean()),
+                'cx': int(cxs.mean()),
+                'cy': int(cys.mean()),
+                'crop_edge': 0,
+                'png_depth_scale': float(self.depth_scale),
+            }
+        }
+        
+        with open(self.camera_path, 'w') as f:
+            yaml.dump_all([camera_dict], f)
+            
+        with open(self.last_camera_path, 'w') as f:
+            yaml.dump_all([camera_dict], f)
+        
