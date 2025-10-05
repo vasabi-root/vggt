@@ -158,8 +158,8 @@ class ReplicaExporter:
         assert len(cameras) > 0
         base_cam = cameras[0]
         
-        image_heights = np.array([camera.width for camera in cameras])
-        image_widths = np.array([camera.height for camera in cameras])
+        image_heights = np.array([camera.height for camera in cameras])
+        image_widths = np.array([camera.width for camera in cameras])
         fxs = np.array([camera.focal_length_x for camera in cameras])
         fys = np.array([camera.focal_length_y for camera in cameras])
         cxs = np.array([camera.principal_point_x for camera in cameras])
