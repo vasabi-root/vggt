@@ -130,7 +130,7 @@ def demo_fn(args):
     # Load images and original coordinates
     # Load Image in 1024, while running VGGT with 518
     vggt_fixed_resolution = 518
-    img_load_resolution = 1024
+    img_load_resolution = 518
 
     images, original_coords = load_and_preprocess_images_square(image_path_list, img_load_resolution)
     images = images.to(device)
