@@ -10,7 +10,6 @@
 
 import os
 from typing import List, Dict, Tuple, Union
-from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -203,7 +202,7 @@ class DPTHead(nn.Module):
         out = []
         dpt_idx = 0
 
-        for layer_idx in tqdm(self.intermediate_layer_idx):
+        for layer_idx in self.intermediate_layer_idx:
             x = aggregated_tokens_list[layer_idx][:, :, patch_start_idx:]
 
             # Select frames if processing a chunk

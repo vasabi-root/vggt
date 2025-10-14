@@ -23,7 +23,7 @@ import trimesh
 import pycolmap
 
 from replica_exporter import ReplicaExporter
-
+from tqdm import trange
 
 from vggt.models.vggt import VGGT
 from vggt.utils.load_fn import load_and_preprocess_images_square
@@ -72,15 +72,18 @@ def parse_sequences(model, images: torch.Tensor, dtype, resolution, sequence_len
     depth_map_sequences = []
     depth_conf_sequences = []
     
-    for sequence in sequences:
-        extrinsic, intrinsic, depth_map, depth_conf = run_VGGT(model, sequence, dtype, resolution)
-        
-        extrinsic_sequences.append(extrinsic)
-        intrinsic_sequences.append(intrinsic)
-        depth_map_sequences.append(depth_map)
-        depth_conf_sequences.append(depth_conf)
-        
-        torch.cuda.empty_cache()
+    with trange(len(images)) as t:
+        for sequence in sequences:
+            extrinsic, intrinsic, depth_map, depth_conf = run_VGGT(model, sequence, dtype, resolution)
+            
+            extrinsic_sequences.append(extrinsic)
+            intrinsic_sequences.append(intrinsic)
+            depth_map_sequences.append(depth_map)
+            depth_conf_sequences.append(depth_conf)
+            
+            torch.cuda.empty_cache()
+
+            t.update(len(sequence))
         
     extrinsic = np.concatenate(extrinsic_sequences)
     intrinsic = np.concatenate(intrinsic_sequences)
