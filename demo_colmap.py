@@ -282,6 +282,7 @@ def demo_fn(args):
         images.to(device),
         torch.tensor(depth_map).to(device),
         reconstruction,
+        args.sequence_length,
         Path(args.scene_dir).name
     )
 

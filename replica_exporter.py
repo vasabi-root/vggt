@@ -50,6 +50,7 @@ class ReplicaExporter:
         frames: torch.Tensor,
         depth_maps: torch.Tensor,
         reconstruction:  pycolmap.Reconstruction,
+        sequence_length: int,
         scene_name:str=None
     ):
         assert len(orig_coords) == len(frames) == len(depth_maps)
@@ -62,7 +63,7 @@ class ReplicaExporter:
         
         self._save_processed_frames(frames)
         self._save_depth_maps(depth_maps)
-        self._save_colmap_as_kitti_traj(reconstruction)
+        self._save_colmap_as_kitti_traj(reconstruction, sequence_length)
         self._save_colmap_as_camera_yaml(reconstruction)
         
 
@@ -133,16 +134,18 @@ class ReplicaExporter:
             img_cv = restored.cpu().detach().numpy().astype(np.uint16)
             cv.imwrite(self._make_depth_path(i), img_cv)
             
-    def _save_colmap_as_kitti_traj(self, reconstruction: pycolmap.Reconstruction):
+    def _save_colmap_as_kitti_traj(self, reconstruction: pycolmap.Reconstruction, sequence_length):
         images = list(reconstruction.images.values())
         images.sort(key=lambda x: x.name)
         
         with open(self.traj_path, 'w') as f:
             with open(self.traj_path.with_stem('traj_cam_from_world'), 'w') as f_cfw:
-                for image in images:
+                shift_to_prev_sequence = np.eye(4, 4)
+                for i, image in enumerate(images):
                     # camera-from-world
                     homogen_mat_12 = image.cam_from_world.matrix()
-                    homogen_mat_16_cfw = np.vstack([homogen_mat_12, [0, 0, 0, 1]])
+                    homogen_mat_16_cfw = np.vstack([homogen_mat_12, [0, 0, 0, 1]]) @ shift_to_prev_sequence
+
                     # world-from-camera
                     homogen_mat_16_wfc = np.linalg.inv(homogen_mat_16_cfw)
                     
@@ -151,6 +154,9 @@ class ReplicaExporter:
                     
                     kitti_str = ' '.join(map(str, homogen_mat_16_cfw.flatten()))
                     f_cfw.write(kitti_str + '\n')
+                    
+                    if (i+1) % sequence_length == 0:
+                        shift_to_prev_sequence = homogen_mat_16_cfw
     
                         
     def _save_colmap_as_camera_yaml(self, reconstruction: pycolmap.Reconstruction):
