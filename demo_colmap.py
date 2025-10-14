@@ -61,10 +61,35 @@ def parse_args():
     parser.add_argument(
         "--conf_thres_value", type=float, default=5.0, help="Confidence threshold value for depth filtering (wo BA)"
     )
+    parser.add_argument("--sequence_length", type=int, default=20, help="Number of images in one VGGT run")
     return parser.parse_args()
 
+def parse_sequences(model, images: torch.Tensor, dtype, resolution, sequence_length=20):
+    sequences = images.split(sequence_length)
+    
+    extrinsic_sequences = []
+    intrinsic_sequences = []
+    depth_map_sequences = []
+    depth_conf_sequences = []
+    
+    for sequence in sequences:
+        extrinsic, intrinsic, depth_map, depth_conf = run_VGGT(model, sequence, dtype, resolution)
+        
+        extrinsic_sequences.append(extrinsic)
+        intrinsic_sequences.append(intrinsic)
+        depth_map_sequences.append(depth_map)
+        depth_conf_sequences.append(depth_conf)
+        
+        torch.cuda.empty_cache()
+        
+    extrinsic = np.concatenate(extrinsic_sequences)
+    intrinsic = np.concatenate(intrinsic_sequences)
+    depth_map = np.concatenate(depth_map_sequences)
+    depth_conf = np.concatenate(depth_conf_sequences)
+    
+    return extrinsic, intrinsic, depth_map, depth_conf
 
-def run_VGGT(model, images, dtype, resolution=518):
+def run_VGGT(model, images: torch.Tensor, dtype, resolution=518):
     # images: [B, 3, H, W]
 
     assert len(images.shape) == 4
@@ -72,23 +97,26 @@ def run_VGGT(model, images, dtype, resolution=518):
 
     # hard-coded to use 518 for VGGT
     images = F.interpolate(images, size=(resolution, resolution), mode="bilinear", align_corners=False)
-
+    
     with torch.no_grad():
-        with torch.cuda.amp.autocast(dtype=dtype):
+        with torch.amp.autocast('cuda', dtype=dtype):
             images = images[None]  # add batch dimension
             aggregated_tokens_list, ps_idx = model.aggregator(images)
-
         # Predict Cameras
         pose_enc = model.camera_head(aggregated_tokens_list)[-1]
+        torch.cuda.empty_cache()
         # Extrinsic and intrinsic matrices, following OpenCV convention (camera from world)
         extrinsic, intrinsic = pose_encoding_to_extri_intri(pose_enc, images.shape[-2:])
+        torch.cuda.empty_cache()
         # Predict Depth Maps
         depth_map, depth_conf = model.depth_head(aggregated_tokens_list, images, ps_idx)
+        torch.cuda.empty_cache()
 
-    extrinsic = extrinsic.squeeze(0).cpu().numpy()
-    intrinsic = intrinsic.squeeze(0).cpu().numpy()
-    depth_map = depth_map.squeeze(0).cpu().numpy()
-    depth_conf = depth_conf.squeeze(0).cpu().numpy()
+    extrinsic = extrinsic.squeeze(0).cpu().detach().numpy()
+    intrinsic = intrinsic.squeeze(0).cpu().detach().numpy()
+    depth_map = depth_map.squeeze(0).cpu().detach().numpy()
+    depth_conf = depth_conf.squeeze(0).cpu().detach().numpy()
+    
     return extrinsic, intrinsic, depth_map, depth_conf
 
 
@@ -141,7 +169,8 @@ def demo_fn(args):
 
     # Run VGGT to estimate camera and depth
     # Run with 518x518 images
-    extrinsic, intrinsic, depth_map, depth_conf = run_VGGT(model, images, dtype, vggt_fixed_resolution)
+    extrinsic, intrinsic, depth_map, depth_conf = parse_sequences(model, images, dtype, vggt_fixed_resolution, args.sequence_length)
+        
     points_3d = unproject_depth_map_to_point_map(depth_map, extrinsic, intrinsic)
 
     if args.use_ba:
