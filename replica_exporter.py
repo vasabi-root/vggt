@@ -155,7 +155,7 @@ class ReplicaExporter:
                     kitti_str = ' '.join(map(str, homogen_mat_16_cfw.flatten()))
                     f_cfw.write(kitti_str + '\n')
                     
-                    if (i+1) % sequence_length == 0:
+                    if i % (sequence_length-1) == 0:
                         shift_to_prev_sequence = homogen_mat_16_cfw
     
                         

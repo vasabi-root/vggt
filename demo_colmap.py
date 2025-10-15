@@ -65,21 +65,27 @@ def parse_args():
     return parser.parse_args()
 
 def parse_sequences(model, images: torch.Tensor, dtype, resolution, sequence_length=20):
-    sequences = images.split(sequence_length)
+    assert sequence_length > 1
+    sequences = list(images.split(sequence_length-1))
+    # overlap last image in i_th sequence and first in next 
+    # to be able to restore the shift between sequences
+    for i in range(len(sequences)-1):
+        sequences[i] = torch.stack([*sequences[i], sequences[i+1][0]])
     
     extrinsic_sequences = []
     intrinsic_sequences = []
     depth_map_sequences = []
     depth_conf_sequences = []
     
-    with trange(len(images)) as t:
-        for sequence in sequences:
+    with trange(len(images) + len(sequences)-1) as t:
+        for i, sequence in enumerate(sequences):
             extrinsic, intrinsic, depth_map, depth_conf = run_VGGT(model, sequence, dtype, resolution)
             
-            extrinsic_sequences.append(extrinsic)
-            intrinsic_sequences.append(intrinsic)
-            depth_map_sequences.append(depth_map)
-            depth_conf_sequences.append(depth_conf)
+            start_idx = int(i > 0)
+            extrinsic_sequences.append(extrinsic[start_idx:])
+            intrinsic_sequences.append(intrinsic[start_idx:])
+            depth_map_sequences.append(depth_map[start_idx:])
+            depth_conf_sequences.append(depth_conf[start_idx:])
             
             torch.cuda.empty_cache()
 
