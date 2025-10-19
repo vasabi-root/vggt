@@ -64,6 +64,19 @@ def parse_args():
     parser.add_argument("--sequence_length", type=int, default=20, help="Number of images in one VGGT run")
     return parser.parse_args()
 
+def align_extrinsic_seq(origin_position: np.ndarray, sequence: np.ndarray):
+    assert origin_position.shape[0] == sequence.shape[1] == 3
+    assert origin_position.shape[1] == sequence.shape[2] == 4
+    
+    extra_row = np.array([0, 0, 0, 1])
+    origin_position = np.vstack([origin_position, extra_row])
+
+    for i in range(len(sequence)):
+        pos_16 =  np.vstack([sequence[i], extra_row])
+        sequence[i] = (pos_16 @ origin_position)[:-1]
+        
+    return sequence
+
 def parse_sequences(model, images: torch.Tensor, dtype, resolution, sequence_length=20):
     assert sequence_length > 1
     sequences = list(images.split(sequence_length-1))
@@ -82,6 +95,9 @@ def parse_sequences(model, images: torch.Tensor, dtype, resolution, sequence_len
             extrinsic, intrinsic, depth_map, depth_conf = run_VGGT(model, sequence, dtype, resolution)
             
             start_idx = int(i > 0)
+            if i > 0:
+                extrinsic = align_extrinsic_seq(extrinsic_sequences[-1][-1], extrinsic)
+                
             extrinsic_sequences.append(extrinsic[start_idx:])
             intrinsic_sequences.append(intrinsic[start_idx:])
             depth_map_sequences.append(depth_map[start_idx:])
@@ -288,7 +304,6 @@ def demo_fn(args):
         images.to(device),
         torch.tensor(depth_map).to(device),
         reconstruction,
-        args.sequence_length,
         Path(args.scene_dir).name
     )
 
