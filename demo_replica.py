@@ -11,6 +11,7 @@ import os
 import copy
 import torch
 import torch.nn.functional as F
+import time
 
 # Configure CUDA settings
 torch.backends.cudnn.enabled = True
@@ -62,7 +63,14 @@ def parse_args():
         "--conf_thres_value", type=float, default=5.0, help="Confidence threshold value for depth filtering (wo BA)"
     )
     parser.add_argument("--sequence_length", type=int, default=20, help="Number of images in one VGGT run")
-    return parser.parse_args()
+    parser.add_argument("--replica_export_dir", type=str, default='datasets/custom', help="Root dir for replica exporting results (without scene name)")
+    parser.add_argument("--replica_export_scene_name", type=str, default=None, help="Scene name for replica exporting results (default value is a name from scene_dir)")
+    args =  parser.parse_args()
+    
+    if not args.replica_export_scene_name:
+        args.replica_export_scene_name = Path(args.scene_dir).stem
+    
+    return args
 
 def align_extrinsic_seq(origin_position: np.ndarray, sequence: np.ndarray):
     assert origin_position.shape[0] == sequence.shape[1] == 3
@@ -90,8 +98,17 @@ def parse_sequences(model, images: torch.Tensor, dtype, resolution, sequence_len
     depth_map_sequences = []
     depth_conf_sequences = []
     
-    with trange(len(images) + len(sequences)-1) as t:
+    images = images.to('cpu')
+    
+    non_first_duration_sum = 0
+    
+    print(f"Sequence length: {sequence_length}")
+    
+    total_images_num = len(images) + len(sequences)-1
+    with trange(total_images_num) as t:
         for i, sequence in enumerate(sequences):
+            sequence = sequence.to('cuda:0')
+            start_t = time.time()
             extrinsic, intrinsic, depth_map, depth_conf = run_VGGT(model, sequence, dtype, resolution)
             
             start_idx = int(i > 0)
@@ -103,9 +120,23 @@ def parse_sequences(model, images: torch.Tensor, dtype, resolution, sequence_len
             depth_map_sequences.append(depth_map[start_idx:])
             depth_conf_sequences.append(depth_conf[start_idx:])
             
+            sequence = sequence.to('cpu')
+            
             torch.cuda.empty_cache()
 
             t.update(len(sequence))
+            end_t = time.time()
+            duration = end_t-start_t
+            
+            if i == 0:
+                print(f"First iteration time: {duration / len(sequence)} s/frame")
+            else:
+                non_first_duration_sum += duration
+                
+    
+    non_first_iter_time = non_first_duration_sum / (len(sequences)-1) / (total_images_num-sequence_length)
+    print(f"Avg non-first iteration time: {non_first_iter_time:.3} s/frame")
+                
         
     extrinsic = np.concatenate(extrinsic_sequences)
     intrinsic = np.concatenate(intrinsic_sequences)
@@ -190,7 +221,7 @@ def demo_fn(args):
     original_coords = original_coords.to(device)
     print(f"Loaded {len(images)} images from {image_dir}")
     
-    exporter = ReplicaExporter(Path('datasets/custom'))
+    exporter = ReplicaExporter(Path(args.replica_export_dir))
 
     # Run VGGT to estimate camera and depth
     # Run with 518x518 images
@@ -304,7 +335,7 @@ def demo_fn(args):
         images.to(device),
         torch.tensor(depth_map).to(device),
         reconstruction,
-        Path(args.scene_dir).name
+        args.replica_export_scene_name
     )
 
     print(f"Saving reconstruction to {args.scene_dir}/sparse")
