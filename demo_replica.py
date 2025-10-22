@@ -134,7 +134,7 @@ def parse_sequences(model, images: torch.Tensor, dtype, resolution, sequence_len
                 non_first_duration_sum += duration
                 
     
-    non_first_iter_time = non_first_duration_sum / (len(sequences)-1) / (total_images_num-sequence_length)
+    non_first_iter_time = non_first_duration_sum / (total_images_num-sequence_length) if total_images_num > sequence_length else 0
     print(f"Avg non-first iteration time: {non_first_iter_time:.3} s/frame")
                 
         
